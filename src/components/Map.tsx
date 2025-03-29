@@ -30,35 +30,46 @@ const Map: React.FC = () => {
   useEffect(() => {
     if (!mapContainer.current) return;
     
+    // Set access token for mapbox
     mapboxgl.accessToken = MAPBOX_TOKEN;
     
-    map.current = new mapboxgl.Map({
+    // Create the map instance
+    const mapInstance = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/streets-v11',
       center: [-74.5, 40], // Default to NYC area
       zoom: 9,
     });
+    
+    map.current = mapInstance;
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    map.current.addControl(new mapboxgl.GeolocateControl({
+    // Add navigation controls
+    mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    mapInstance.addControl(new mapboxgl.GeolocateControl({
       positionOptions: {
         enableHighAccuracy: true
       },
       trackUserLocation: true
     }));
 
-    map.current.on('load', () => {
+    // Set map as loaded when it's ready
+    mapInstance.on('load', () => {
+      console.log('Map loaded successfully');
       setMapLoaded(true);
     });
 
+    // Cleanup function
     return () => {
       map.current?.remove();
+      map.current = null;
     };
   }, []);
 
   // Update marker when location changes
   useEffect(() => {
     if (!map.current || !mapLoaded || !currentLocation) return;
+    
+    console.log('Updating location on map', currentLocation);
     
     const { latitude, longitude } = currentLocation;
     
@@ -240,11 +251,12 @@ const Map: React.FC = () => {
     });
   }, [geofenceAreas, mapLoaded]);
 
+  // Ensure the map container is rendered correctly
   return (
-    <div className="relative w-full h-full rounded-lg overflow-hidden flex flex-col">
-      <div ref={mapContainer} className="flex-1 w-full" />
+    <div className="relative w-full h-full rounded-lg overflow-hidden">
+      <div ref={mapContainer} className="absolute inset-0" style={{ minHeight: '500px' }} />
       
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
         {watchingLocation ? (
           <Button 
             variant="destructive" 
