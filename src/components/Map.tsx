@@ -4,11 +4,12 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { MapPin, Navigation, AlertCircle } from 'lucide-react';
+import { toast } from '@/components/ui/use-toast';
 
-// Temporary access token - in production, this should be in environment variables
-// This is a public token so it's ok for demonstration purposes
-const MAPBOX_TOKEN = 'pk.eyJ1IjoibG92YWJsZWRldiIsImEiOiJjbHZpeXE0MDgwYWV5MmtvNnRtdHVhc2diIn0.OMj4t3_TN8HfYUQEkFRqGw';
+// Default token - will be replaced by user input if needed
+let MAPBOX_TOKEN = 'pk.eyJ1IjoibG92YWJsZWRldiIsImEiOiJjbHZpeXE0MDgwYWV5MmtvNnRtdHVhc2diIn0.OMj4t3_TN8HfYUQEkFRqGw';
 
 const Map: React.FC = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -18,6 +19,10 @@ const Map: React.FC = () => {
   const geofenceCircles = useRef<{ [key: string]: mapboxgl.GeoJSONSource }>({});
   
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [customToken, setCustomToken] = useState('');
+  const [showTokenInput, setShowTokenInput] = useState(false);
+  
   const { 
     currentLocation, 
     watchingLocation, 
@@ -26,42 +31,86 @@ const Map: React.FC = () => {
     geofenceAreas
   } = useApp();
 
-  // Initialize map
-  useEffect(() => {
+  const initializeMap = () => {
     if (!mapContainer.current) return;
     
-    // Set access token for mapbox
-    mapboxgl.accessToken = MAPBOX_TOKEN;
+    // Clear previous errors
+    setMapError(null);
     
-    // Create the map instance
-    const mapInstance = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v11',
-      center: [-74.5, 40], // Default to NYC area
-      zoom: 9,
-    });
+    try {
+      // Set access token for mapbox
+      mapboxgl.accessToken = customToken || MAPBOX_TOKEN;
+      
+      // Remove old map if it exists
+      if (map.current) {
+        map.current.remove();
+      }
+      
+      // Create the map instance
+      const mapInstance = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v11',
+        center: [-74.5, 40], // Default to NYC area
+        zoom: 9,
+      });
+      
+      map.current = mapInstance;
+  
+      // Add navigation controls
+      mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
+      mapInstance.addControl(new mapboxgl.GeolocateControl({
+        positionOptions: {
+          enableHighAccuracy: true
+        },
+        trackUserLocation: true
+      }));
+  
+      // Set map as loaded when it's ready
+      mapInstance.on('load', () => {
+        console.log('Map loaded successfully');
+        // Save the token if it worked
+        if (customToken) {
+          localStorage.setItem('mapbox_token', customToken);
+          // Update the global token
+          MAPBOX_TOKEN = customToken;
+        }
+        setMapLoaded(true);
+        setShowTokenInput(false);
+      });
+      
+      // Handle map load errors
+      mapInstance.on('error', (e) => {
+        console.error('Map error:', e);
+        if (e.error?.status === 401) {
+          setMapError('Invalid Mapbox access token. Please enter a valid token.');
+          setShowTokenInput(true);
+        } else {
+          setMapError(`Error loading map: ${e.error?.message || 'Unknown error'}`);
+        }
+      });
+    } catch (error) {
+      console.error('Error initializing map:', error);
+      setMapError('Failed to initialize map. Please try again.');
+      setShowTokenInput(true);
+    }
+  };
+
+  // Check for saved token on first load
+  useEffect(() => {
+    const savedToken = localStorage.getItem('mapbox_token');
+    if (savedToken) {
+      setCustomToken(savedToken);
+      MAPBOX_TOKEN = savedToken;
+    }
     
-    map.current = mapInstance;
-
-    // Add navigation controls
-    mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
-    mapInstance.addControl(new mapboxgl.GeolocateControl({
-      positionOptions: {
-        enableHighAccuracy: true
-      },
-      trackUserLocation: true
-    }));
-
-    // Set map as loaded when it's ready
-    mapInstance.on('load', () => {
-      console.log('Map loaded successfully');
-      setMapLoaded(true);
-    });
-
+    initializeMap();
+    
     // Cleanup function
     return () => {
-      map.current?.remove();
-      map.current = null;
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
     };
   }, []);
 
@@ -251,9 +300,55 @@ const Map: React.FC = () => {
     });
   }, [geofenceAreas, mapLoaded]);
 
-  // Ensure the map container is rendered correctly
+  const handleTokenSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customToken.trim()) {
+      toast({
+        title: "Token Required",
+        description: "Please enter a valid Mapbox token",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Initialize map with new token
+    initializeMap();
+  };
+
+  // Render map or token input form based on state
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden">
+      {mapError && (
+        <div className="absolute inset-0 flex items-center justify-center z-20 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card p-6 rounded-lg shadow-lg max-w-md w-full">
+            <div className="flex items-center text-destructive mb-4">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <h3 className="font-semibold">{mapError}</h3>
+            </div>
+            
+            {showTokenInput && (
+              <form onSubmit={handleTokenSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    To use this map, you need to provide a valid Mapbox access token.
+                    Visit <a href="https://account.mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">mapbox.com</a> to create an account and get your token.
+                  </p>
+                  <Input
+                    placeholder="Enter your Mapbox token"
+                    value={customToken}
+                    onChange={(e) => setCustomToken(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <Button type="submit" className="w-full">
+                  Apply Token
+                </Button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+      
       <div ref={mapContainer} className="absolute inset-0" style={{ minHeight: '500px' }} />
       
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
