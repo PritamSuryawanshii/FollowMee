@@ -11,7 +11,7 @@ const Dashboard = () => {
       <Navbar />
       <div className="flex-1 container mx-auto pt-6 px-4 grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col">
-          <div className="bg-card rounded-lg shadow-sm border overflow-hidden flex-grow" style={{ height: '600px' }}>
+          <div className="bg-card rounded-lg shadow-sm border overflow-hidden flex-grow" style={{ height: '70vh', minHeight: '600px' }}>
             <Map />
           </div>
         </div>

@@ -1,28 +1,32 @@
 
-import React, { useEffect, useRef, useState } from 'react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import React, { useCallback, useState, useRef } from 'react';
+import { GoogleMap, useJsApiLoader, Marker, Circle } from '@react-google-maps/api';
 import { useApp } from '@/contexts/AppContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { MapPin, Navigation, AlertCircle } from 'lucide-react';
+import { MapPin, Navigation } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
-// Default token - will be replaced by user input if needed
-let MAPBOX_TOKEN = 'pk.eyJ1IjoibG92YWJsZWRldiIsImEiOiJjbHZpeXE0MDgwYWV5MmtvNnRtdHVhc2diIn0.OMj4t3_TN8HfYUQEkFRqGw';
+// Default map options
+const mapContainerStyle = {
+  width: '100%',
+  height: '100%',
+  borderRadius: '0.5rem'
+};
+
+const defaultCenter = {
+  lat: 40.7128,
+  lng: -74.0060  // NYC as default center
+};
+
+const options = {
+  disableDefaultUI: false,
+  zoomControl: true,
+  mapTypeControl: false,
+  streetViewControl: false,
+  fullscreenControl: true,
+};
 
 const Map: React.FC = () => {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const marker = useRef<mapboxgl.Marker | null>(null);
-  const geofenceMarkers = useRef<{ [key: string]: mapboxgl.Marker }>({});
-  const geofenceCircles = useRef<{ [key: string]: mapboxgl.GeoJSONSource }>({});
-  
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
-  const [customToken, setCustomToken] = useState('');
-  const [showTokenInput, setShowTokenInput] = useState(false);
-  
   const { 
     currentLocation, 
     watchingLocation, 
@@ -31,326 +35,120 @@ const Map: React.FC = () => {
     geofenceAreas
   } = useApp();
 
-  const initializeMap = () => {
-    if (!mapContainer.current) return;
-    
-    // Clear previous errors
-    setMapError(null);
-    
-    try {
-      // Set access token for mapbox
-      mapboxgl.accessToken = customToken || MAPBOX_TOKEN;
-      
-      // Remove old map if it exists
-      if (map.current) {
-        map.current.remove();
-      }
-      
-      // Create the map instance
-      const mapInstance = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: 'mapbox://styles/mapbox/streets-v11',
-        center: [-74.5, 40], // Default to NYC area
-        zoom: 9,
-      });
-      
-      map.current = mapInstance;
-  
-      // Add navigation controls
-      mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right');
-      mapInstance.addControl(new mapboxgl.GeolocateControl({
-        positionOptions: {
-          enableHighAccuracy: true
-        },
-        trackUserLocation: true
-      }));
-  
-      // Set map as loaded when it's ready
-      mapInstance.on('load', () => {
-        console.log('Map loaded successfully');
-        // Save the token if it worked
-        if (customToken) {
-          localStorage.setItem('mapbox_token', customToken);
-          // Update the global token
-          MAPBOX_TOKEN = customToken;
-        }
-        setMapLoaded(true);
-        setShowTokenInput(false);
-      });
-      
-      // Handle map load errors
-      mapInstance.on('error', (e) => {
-        console.error('Map error:', e);
-        if (e.error?.status === 401) {
-          setMapError('Invalid Mapbox access token. Please enter a valid token.');
-          setShowTokenInput(true);
-        } else {
-          setMapError(`Error loading map: ${e.error?.message || 'Unknown error'}`);
-        }
-      });
-    } catch (error) {
-      console.error('Error initializing map:', error);
-      setMapError('Failed to initialize map. Please try again.');
-      setShowTokenInput(true);
-    }
-  };
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
 
-  // Check for saved token on first load
-  useEffect(() => {
-    const savedToken = localStorage.getItem('mapbox_token');
-    if (savedToken) {
-      setCustomToken(savedToken);
-      MAPBOX_TOKEN = savedToken;
-    }
-    
-    initializeMap();
-    
-    // Cleanup function
-    return () => {
-      if (map.current) {
-        map.current.remove();
-        map.current = null;
-      }
-    };
+  // Load the Google Maps JavaScript API
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: '', // Google Maps provides a development API key that works with restrictions
+    libraries: ['places', 'geometry'],
+  });
+
+  // Save map reference when the map loads
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    setMapLoaded(true);
   }, []);
 
-  // Update marker when location changes
-  useEffect(() => {
-    if (!map.current || !mapLoaded || !currentLocation) return;
-    
-    console.log('Updating location on map', currentLocation);
-    
-    const { latitude, longitude } = currentLocation;
-    
-    if (!marker.current) {
-      // Create new marker
-      marker.current = new mapboxgl.Marker({
-        color: '#ED8936',
-        scale: 0.8
-      })
-        .setLngLat([longitude, latitude])
-        .addTo(map.current);
-        
-      // Fly to current location
-      map.current.flyTo({
-        center: [longitude, latitude],
-        zoom: 15,
-        speed: 1.5
-      });
-    } else {
-      // Update existing marker
-      marker.current.setLngLat([longitude, latitude]);
-    }
-    
-    // Create pulse effect at location
-    if (!map.current.getSource('location-pulse')) {
-      map.current.addSource('location-pulse', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [{
-            type: 'Feature',
-            geometry: {
-              type: 'Point',
-              coordinates: [longitude, latitude]
-            },
-            properties: {}
-          }]
-        }
-      });
+  // Center map on current location when it changes
+  React.useEffect(() => {
+    if (mapLoaded && mapRef.current && currentLocation) {
+      const center = {
+        lat: currentLocation.latitude,
+        lng: currentLocation.longitude
+      };
       
-      map.current.addLayer({
-        id: 'location-pulse-circle',
-        type: 'circle',
-        source: 'location-pulse',
-        paint: {
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            8, 10,
-            18, 40
-          ],
-          'circle-color': '#ED8936',
-          'circle-opacity': 0.3,
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#ED8936'
-        }
-      });
-    } else {
-      // Update pulse location
-      const source = map.current.getSource('location-pulse') as mapboxgl.GeoJSONSource;
-      source.setData({
-        type: 'FeatureCollection',
-        features: [{
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude]
-          },
-          properties: {}
-        }]
-      });
+      mapRef.current.panTo(center);
+      mapRef.current.setZoom(15);
     }
   }, [currentLocation, mapLoaded]);
 
-  // Handle geofence areas
-  useEffect(() => {
-    if (!map.current || !mapLoaded) return;
-    
-    // Remove old markers and circles that aren't in the new list
-    Object.keys(geofenceMarkers.current).forEach(id => {
-      if (!geofenceAreas.find(area => area.id === id)) {
-        geofenceMarkers.current[id].remove();
-        delete geofenceMarkers.current[id];
-        
-        if (map.current?.getLayer(`geofence-circle-${id}`)) {
-          map.current.removeLayer(`geofence-circle-${id}`);
-        }
-        if (map.current?.getSource(`geofence-source-${id}`)) {
-          map.current.removeSource(`geofence-source-${id}`);
-        }
-        delete geofenceCircles.current[id];
-      }
-    });
-    
-    // Add or update geofence visualizations
-    geofenceAreas.forEach(area => {
-      const { id, latitude, longitude, radius, name, isActive } = area;
-      
-      // Add marker if it doesn't exist
-      if (!geofenceMarkers.current[id]) {
-        const popupContent = document.createElement('div');
-        popupContent.innerHTML = `<h3 class="font-medium">${name}</h3><p>Radius: ${radius}m</p>`;
-        
-        const popup = new mapboxgl.Popup({ offset: 25 }).setDOMContent(popupContent);
-        
-        geofenceMarkers.current[id] = new mapboxgl.Marker({
-          color: isActive ? '#285E61' : '#718096',
-          scale: 0.8
-        })
-          .setLngLat([longitude, latitude])
-          .setPopup(popup)
-          .addTo(map.current!);
-      } else {
-        // Update marker position and color
-        geofenceMarkers.current[id]
-          .setLngLat([longitude, latitude])
-          .getElement().style.color = isActive ? '#285E61' : '#718096';
-      }
-      
-      // Add or update circle
-      if (!map.current!.getSource(`geofence-source-${id}`)) {
-        map.current!.addSource(`geofence-source-${id}`, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: {
-              type: 'Point',
-              coordinates: [longitude, latitude]
-            },
-            properties: {}
-          }
-        });
-        
-        map.current!.addLayer({
-          id: `geofence-circle-${id}`,
-          type: 'circle',
-          source: `geofence-source-${id}`,
-          paint: {
-            'circle-radius': {
-              stops: [
-                [0, 0],
-                [20, radius / 2]
-              ],
-              base: 2
-            },
-            'circle-color': isActive ? '#285E61' : '#718096',
-            'circle-opacity': 0.2,
-            'circle-stroke-width': 2,
-            'circle-stroke-color': isActive ? '#285E61' : '#718096',
-            'circle-stroke-opacity': 0.5
-          }
-        });
-        
-        geofenceCircles.current[id] = map.current!.getSource(`geofence-source-${id}`) as mapboxgl.GeoJSONSource;
-      } else {
-        // Update circle location and appearance
-        geofenceCircles.current[id].setData({
-          type: 'Feature',
-          geometry: {
-            type: 'Point',
-            coordinates: [longitude, latitude]
-          },
-          properties: {}
-        });
-        
-        map.current!.setPaintProperty(
-          `geofence-circle-${id}`,
-          'circle-color',
-          isActive ? '#285E61' : '#718096'
-        );
-        
-        map.current!.setPaintProperty(
-          `geofence-circle-${id}`,
-          'circle-stroke-color',
-          isActive ? '#285E61' : '#718096'
-        );
-      }
-    });
-  }, [geofenceAreas, mapLoaded]);
+  // If there's an error loading the map
+  if (loadError) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-card">
+        <div className="text-center p-6">
+          <p className="text-destructive font-medium mb-2">Error loading map</p>
+          <p className="text-muted-foreground">
+            There was a problem loading Google Maps. Please try refreshing the page.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  const handleTokenSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customToken.trim()) {
-      toast({
-        title: "Token Required",
-        description: "Please enter a valid Mapbox token",
-        variant: "destructive"
-      });
-      return;
-    }
-    
-    // Initialize map with new token
-    initializeMap();
-  };
+  // Show loading state while the API is loading
+  if (!isLoaded) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-card">
+        <div className="animate-pulse text-center">
+          <p>Loading map...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // Render map or token input form based on state
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden">
-      {mapError && (
-        <div className="absolute inset-0 flex items-center justify-center z-20 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card p-6 rounded-lg shadow-lg max-w-md w-full">
-            <div className="flex items-center text-destructive mb-4">
-              <AlertCircle className="h-5 w-5 mr-2" />
-              <h3 className="font-semibold">{mapError}</h3>
-            </div>
-            
-            {showTokenInput && (
-              <form onSubmit={handleTokenSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <p className="text-sm text-muted-foreground">
-                    To use this map, you need to provide a valid Mapbox access token.
-                    Visit <a href="https://account.mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">mapbox.com</a> to create an account and get your token.
-                  </p>
-                  <Input
-                    placeholder="Enter your Mapbox token"
-                    value={customToken}
-                    onChange={(e) => setCustomToken(e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  Apply Token
-                </Button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      <GoogleMap
+        mapContainerStyle={mapContainerStyle}
+        center={currentLocation ? 
+          { lat: currentLocation.latitude, lng: currentLocation.longitude } : 
+          defaultCenter
+        }
+        zoom={13}
+        options={options}
+        onLoad={onMapLoad}
+      >
+        {/* Current location marker */}
+        {currentLocation && (
+          <Marker
+            position={{
+              lat: currentLocation.latitude,
+              lng: currentLocation.longitude
+            }}
+            icon={{
+              url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23ED8936' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a10 10 0 1 0 10 10H12V2Z'/%3E%3Cpath d='M12 2v10h10c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2Z'/%3E%3C/svg%3E",
+              scaledSize: new google.maps.Size(36, 36),
+              anchor: new google.maps.Point(18, 18)
+            }}
+          />
+        )}
+
+        {/* Geofence areas */}
+        {geofenceAreas.map((area) => (
+          <React.Fragment key={area.id}>
+            <Marker
+              position={{
+                lat: area.latitude,
+                lng: area.longitude
+              }}
+              title={area.name}
+              icon={{
+                url: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='${area.isActive ? '%23285E61' : '%23718096'}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z'/%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3C/svg%3E`,
+                scaledSize: new google.maps.Size(28, 28),
+                anchor: new google.maps.Point(14, 28)
+              }}
+            />
+            <Circle
+              center={{
+                lat: area.latitude,
+                lng: area.longitude
+              }}
+              radius={area.radius}
+              options={{
+                strokeColor: area.isActive ? '#285E61' : '#718096',
+                strokeOpacity: 0.5,
+                strokeWeight: 2,
+                fillColor: area.isActive ? '#285E61' : '#718096',
+                fillOpacity: 0.2,
+              }}
+            />
+          </React.Fragment>
+        ))}
+      </GoogleMap>
       
-      <div ref={mapContainer} className="absolute inset-0" style={{ minHeight: '500px' }} />
-      
+      {/* Location tracking button */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
         {watchingLocation ? (
           <Button 
@@ -366,7 +164,14 @@ const Map: React.FC = () => {
             variant="default"
             size="sm"
             className="rounded-full h-12 w-12 p-0 bg-roamly-orange hover:bg-roamly-orange/90"
-            onClick={startWatchingLocation}
+            onClick={() => {
+              startWatchingLocation();
+              toast({
+                title: "Location Tracking Enabled",
+                description: "Your location is now being tracked on the map.",
+                duration: 3000,
+              });
+            }}
           >
             <Navigation className="h-5 w-5" />
           </Button>
