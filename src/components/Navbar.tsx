@@ -17,7 +17,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { Map, History, Settings, Users, Menu, LogOut } from 'lucide-react';
+import { Map, History, Settings, Users, Menu, LogOut, Navigation } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const Navbar: React.FC = () => {
