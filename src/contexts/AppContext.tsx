@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 type User = {
@@ -53,13 +52,6 @@ type AppContextType = {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Sample user data for demonstration
-const SAMPLE_USER = {
-  id: 'user-1',
-  username: 'demouser',
-  email: 'demo@example.com'
-};
-
 // Mock function to simulate geofence check
 const isInGeofence = (location: Location, geofence: GeofenceArea): boolean => {
   // Calculate distance between two points using Haversine formula
@@ -89,15 +81,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [sharedLocations, setSharedLocations] = useState<SharedLocation[]>([]);
   const [watchingLocation, setWatchingLocation] = useState<boolean>(false);
   const [watchId, setWatchId] = useState<number | null>(null);
-
-  // Simulate loading user from storage
+  
+  // Load user data from localStorage on initialization
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       setUser(JSON.parse(storedUser));
     }
+    
+    const storedGeofences = localStorage.getItem('geofenceAreas');
+    if (storedGeofences) {
+      setGeofenceAreas(JSON.parse(storedGeofences));
+    }
+    
+    const storedHistory = localStorage.getItem('locationHistory');
+    if (storedHistory) {
+      setLocationHistory(JSON.parse(storedHistory));
+    }
+    
+    const storedSharedLocations = localStorage.getItem('sharedLocations');
+    if (storedSharedLocations) {
+      setSharedLocations(JSON.parse(storedSharedLocations));
+    }
+    
     setIsLoading(false);
   }, []);
+  
+  // Save geofence areas to localStorage whenever they change
+  useEffect(() => {
+    if (geofenceAreas.length > 0) {
+      localStorage.setItem('geofenceAreas', JSON.stringify(geofenceAreas));
+    }
+  }, [geofenceAreas]);
+  
+  // Save location history to localStorage whenever it changes
+  useEffect(() => {
+    if (locationHistory.length > 0) {
+      // Only keep the last 100 locations to avoid localStorage size limits
+      const limitedHistory = locationHistory.slice(-100);
+      localStorage.setItem('locationHistory', JSON.stringify(limitedHistory));
+    }
+  }, [locationHistory]);
+  
+  // Save shared locations to localStorage whenever they change
+  useEffect(() => {
+    if (sharedLocations.length > 0) {
+      localStorage.setItem('sharedLocations', JSON.stringify(sharedLocations));
+    }
+  }, [sharedLocations]);
 
   // Geofence checking effect
   useEffect(() => {
@@ -115,13 +146,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Simulating API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Check if the user exists in localStorage
+      const users = JSON.parse(localStorage.getItem('users') || '[]');
+      const foundUser = users.find((u: any) => 
+        u.email.toLowerCase() === email.toLowerCase() && u.password === password
+      );
       
-      // In a real app, we would verify credentials with a backend
-      // For demo, we'll just log the user in
-      setUser(SAMPLE_USER);
-      localStorage.setItem('user', JSON.stringify(SAMPLE_USER));
+      if (!foundUser) {
+        throw new Error('Invalid credentials');
+      }
+      
+      // Remove password from user object before storing in state
+      const { password: _, ...userWithoutPassword } = foundUser;
+      
+      setUser(userWithoutPassword);
+      localStorage.setItem('user', JSON.stringify(userWithoutPassword));
+      return;
     } catch (error) {
       console.error('Login failed:', error);
       throw new Error('Invalid credentials');
@@ -133,21 +173,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const signup = async (username: string, email: string, password: string) => {
     setIsLoading(true);
     try {
-      // Simulating API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Get existing users or initialize empty array
+      const users = JSON.parse(localStorage.getItem('users') || '[]');
       
-      // In a real app, we would create a user with a backend
-      // For demo, we'll just create a mock user
+      // Check if email already exists
+      const emailExists = users.some((u: any) => u.email.toLowerCase() === email.toLowerCase());
+      if (emailExists) {
+        throw new Error('Email already registered');
+      }
+      
+      // Create new user
       const newUser = {
         id: 'user-' + Date.now(),
         username,
-        email
+        email,
+        password // In a real app, this would be hashed
       };
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
+      
+      // Add to users array
+      users.push(newUser);
+      localStorage.setItem('users', JSON.stringify(users));
+      
+      // Log the user in (remove password from user object)
+      const { password: _, ...userWithoutPassword } = newUser;
+      setUser(userWithoutPassword);
+      localStorage.setItem('user', JSON.stringify(userWithoutPassword));
     } catch (error) {
       console.error('Signup failed:', error);
-      throw new Error('Signup failed');
+      throw error;
     } finally {
       setIsLoading(false);
     }

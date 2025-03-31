@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { Navigation } from 'lucide-react';
+import { toast } from '@/components/ui/use-toast';
 
 const AuthForms: React.FC = () => {
   const navigate = useNavigate();
@@ -38,6 +39,10 @@ const AuthForms: React.FC = () => {
 
     try {
       await login(loginEmail, loginPassword);
+      toast({
+        title: "Login successful",
+        description: "Welcome back to Roamly!",
+      });
       navigate('/dashboard');
     } catch (err) {
       setError('Invalid credentials');
@@ -73,6 +78,10 @@ const AuthForms: React.FC = () => {
 
     try {
       await signup(username, email, password);
+      toast({
+        title: "Account created successfully",
+        description: "Welcome to Roamly! You've been automatically logged in.",
+      });
       navigate('/dashboard');
     } catch (err) {
       setError('Signup failed');
