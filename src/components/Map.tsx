@@ -1,4 +1,3 @@
-
 import React, { useCallback, useState, useRef } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, Circle } from '@react-google-maps/api';
 import { useApp } from '@/contexts/AppContext';
@@ -6,16 +5,16 @@ import { Button } from '@/components/ui/button';
 import { MapPin, Navigation } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
-// Default map options
+// Updated default center to Mumbai, India
+const defaultCenter = {
+  lat: 19.0760,  // Latitude of Mumbai
+  lng: 72.8777   // Longitude of Mumbai
+};
+
 const mapContainerStyle = {
   width: '100%',
   height: '100%',
   borderRadius: '0.5rem'
-};
-
-const defaultCenter = {
-  lat: 40.7128,
-  lng: -74.0060  // NYC as default center
 };
 
 const options = {
@@ -38,19 +37,16 @@ const Map: React.FC = () => {
   const mapRef = useRef<google.maps.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
 
-  // Load the Google Maps JavaScript API
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: '', // Google Maps provides a development API key that works with restrictions
     libraries: ['places', 'geometry'],
   });
 
-  // Save map reference when the map loads
   const onMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
     setMapLoaded(true);
   }, []);
 
-  // Center map on current location when it changes
   React.useEffect(() => {
     if (mapLoaded && mapRef.current && currentLocation) {
       const center = {
@@ -63,7 +59,6 @@ const Map: React.FC = () => {
     }
   }, [currentLocation, mapLoaded]);
 
-  // If there's an error loading the map
   if (loadError) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-card">
@@ -77,7 +72,6 @@ const Map: React.FC = () => {
     );
   }
 
-  // Show loading state while the API is loading
   if (!isLoaded) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-card">
@@ -100,7 +94,6 @@ const Map: React.FC = () => {
         options={options}
         onLoad={onMapLoad}
       >
-        {/* Current location marker */}
         {currentLocation && (
           <Marker
             position={{
@@ -115,7 +108,6 @@ const Map: React.FC = () => {
           />
         )}
 
-        {/* Geofence areas */}
         {geofenceAreas.map((area) => (
           <React.Fragment key={area.id}>
             <Marker
@@ -148,7 +140,6 @@ const Map: React.FC = () => {
         ))}
       </GoogleMap>
       
-      {/* Location tracking button */}
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
         {watchingLocation ? (
           <Button 
