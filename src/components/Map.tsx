@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import { MapPin, Navigation } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 
-// Updated default center to Mumbai, India
 const defaultCenter = {
   lat: 19.0760,  // Latitude of Mumbai
   lng: 72.8777   // Longitude of Mumbai
@@ -139,6 +138,15 @@ const Map: React.FC = () => {
           </React.Fragment>
         ))}
       </GoogleMap>
+      
+      {import.meta.env.DEV && currentLocation && (
+        <div className="absolute top-2 left-2 z-10 bg-black/70 text-white p-2 rounded-md text-xs">
+          <div>Lat: {currentLocation.latitude.toFixed(4)}</div>
+          <div>Lng: {currentLocation.longitude.toFixed(4)}</div>
+          <div>Accuracy: {currentLocation.accuracy}m</div>
+          <div>Tracking: {watchingLocation ? 'ON' : 'OFF'}</div>
+        </div>
+      )}
       
       <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
         {watchingLocation ? (
